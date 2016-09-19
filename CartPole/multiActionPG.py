@@ -10,18 +10,24 @@ learning_rate = 1e-2
 gamma = 0.99 # decay factor
 decay_rate = 0.9 # decay factor for RMSProp leaky sum of grad^2
 batch_size = 128
+num_actions = 2
 
 # Model initialization
 D = 8 # input dimensions
 model = {}
 model['W1'] = np.random.randn(H,D) / np.sqrt(D) # "Xavier" initialization
-model['W2'] = np.random.randn(H) / np.sqrt(H)
+model['W2'] = np.random.randn(num_actions,H) / np.sqrt(H*num_actions)
 
 grad_buffer = { k : np.zeros_like(v) for k,v in model.iteritems() }
 rmsprop_cache = { k : np.zeros_like(v) for k,v in model.iteritems() } # rmsprop memory
 
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x))
+
+def softmax(f):
+    f_exp = np.exp(f)
+    f_softmax /= np.sum(f_exp)
+    return f_exp
 
 def discount_rewards(reward_sum):
     discounted_r = np.ones(reward_sum)
@@ -35,21 +41,27 @@ def discount_rewards(reward_sum):
 def policy_forward(x):
     h = np.dot(model['W1'], x)
     h[h < 0] = 0
-    logp = np.dot(model['W2'], h) # log(p1) - log(p2)
-    p = sigmoid(logp)
+    f = np.dot(model['W2'], h) # log(p1) - log(p2)
+    p = softmax(f)
     return p, h
 
-def policy_backward(eph, rdlogp, epx):
-    dW2 = np.dot(eph.T, epdlogp).ravel()
-    dh = np.outer(epdlogp, model['W2'])
+def policy_backward(eph, epdf, epx):
+    dW2 = np.dot(df, eph.T)
+    dh = np.dot(model['W2'].T, epdf)
     dh[eph <= 0] = 0 # backprop relu
     dW1 = np.dot(dh.T, epx)
     return {'W1':dW1, 'W2':dW2}
 
+def one_hot(y, length):
+    v = np.ones(length)
+    v[y] += 1
+    return v
+
+
 env = gym.make('CartPole-v0')
 observation = env.reset()
 prev_x = np.zeros(4)
-xs, hs, dlogps, drs = [], [], [], []
+xs, hs, df = [], [], []
 running_reward = None
 reward_sum = 0
 episode_number = 0
@@ -66,11 +78,17 @@ while True:
     prev_x = current_x
 
     # choose action
-    aprob, h = policy_forward(x)
-    y = 1 if np.random.uniform() < aprob else 0
+    # y is the index of the chosen action
+    prob, h = policy_forward(x)
+    y_value = np.random.uniform()
+    for i in range(len(prob)):
+        if np.sum(prob[:i+1]) > y_value: y = i
+
     xs.append(x)
     hs.append(h)
-    dlogps.append(y - aprob)
+
+    df = -prob + one_hot(y, num_actions)
+    dfs.append(df)
 
     observation, reward, done, info = env.step(y)
     reward_sum += reward
@@ -80,17 +98,16 @@ while True:
 
         epx = np.vstack(xs)
         eph = np.vstack(hs)
-        epdlogp = np.vstack(dlogps)
-        xs, hs, dlogps, drs = [], [], [], []
-
+        epdf = np.vstack(dfs)
+        xs, hs, dfs = [], [], []
 
         discounted_r = discount_rewards(reward_sum)
         discounted_r -= np.mean(discounted_r)
         discounted_r /= np.std(discounted_r)
         #discounted_r = discounted_r / 100.0 - 1.0
 
-        epdlogp = epdlogp.squeeze() * discounted_r
-        grad = policy_backward(eph, epdlogp, epx)
+        epdf = epdf * discounted_r
+        grad = policy_backward(eph, epdf, epx)
         for k in model: grad_buffer[k] += grad[k]
 
         batch_rewards.append(reward_sum)
