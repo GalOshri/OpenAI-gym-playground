@@ -1,4 +1,4 @@
-''' Based on https://gist.github.com/karpathy/a4166c7fe253700972fcbc77e4ea32c5 '''
+''' Based on Andrej Karpathy's https://gist.github.com/karpathy/a4166c7fe253700972fcbc77e4ea32c5 '''
 import gym
 import numpy as np
 import random
@@ -40,12 +40,10 @@ def policy_forward(x):
     return p, h
 
 def policy_backward(eph, rdlogp, epx):
-    print eph.T.shape
     dW2 = np.dot(eph.T, epdlogp).ravel()
     dh = np.outer(epdlogp, model['W2'])
     dh[eph <= 0] = 0 # backprop relu
     dW1 = np.dot(dh.T, epx)
-    exit(0)
     return {'W1':dW1, 'W2':dW2}
 
 
@@ -60,7 +58,7 @@ episode_number = 0
 batch_rewards = []
 
 while True:
-    # env.render()
+    env.render()
 
     # set up input
     current_x = np.array(observation)

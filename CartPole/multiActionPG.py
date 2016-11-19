@@ -1,4 +1,4 @@
-''' Based on https://gist.github.com/karpathy/a4166c7fe253700972fcbc77e4ea32c5 '''
+''' Based on Andrej Karpathy's https://gist.github.com/karpathy/a4166c7fe253700972fcbc77e4ea32c5 '''
 import gym
 import numpy as np
 import random
@@ -21,13 +21,10 @@ model['W2'] = np.random.randn(num_actions,H) / np.sqrt(H*num_actions)
 grad_buffer = { k : np.zeros_like(v) for k,v in model.iteritems() }
 rmsprop_cache = { k : np.zeros_like(v) for k,v in model.iteritems() } # rmsprop memory
 
-def sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-x))
-
 def softmax(f):
     f_exp = np.exp(f)
-    f_softmax /= np.sum(f_exp)
-    return f_exp
+    f_softmax = f_exp / np.sum(f_exp)
+    return f_softmax
 
 def discount_rewards(reward_sum):
     discounted_r = np.ones(reward_sum)
@@ -46,14 +43,14 @@ def policy_forward(x):
     return p, h
 
 def policy_backward(eph, epdf, epx):
-    dW2 = np.dot(df, eph.T)
-    dh = np.dot(model['W2'].T, epdf)
-    dh[eph <= 0] = 0 # backprop relu
-    dW1 = np.dot(dh.T, epx)
+    dW2 = np.dot(epdf.T, eph)
+    dh = np.dot(model['W2'].T, epdf.T)
+    dh[eph.T <= 0] = 0 # backprop 
+    dW1 = np.dot(dh, epx)
     return {'W1':dW1, 'W2':dW2}
 
 def one_hot(y, length):
-    v = np.ones(length)
+    v = np.zeros(length)
     v[y] += 1
     return v
 
@@ -61,7 +58,7 @@ def one_hot(y, length):
 env = gym.make('CartPole-v0')
 observation = env.reset()
 prev_x = np.zeros(4)
-xs, hs, df = [], [], []
+xs, hs, dfs = [], [], []
 running_reward = None
 reward_sum = 0
 episode_number = 0
@@ -80,12 +77,19 @@ while True:
     # choose action
     # y is the index of the chosen action
     prob, h = policy_forward(x)
+
     y_value = np.random.uniform()
+    prob_sum = 0
+
     for i in range(len(prob)):
-        if np.sum(prob[:i+1]) > y_value: y = i
+        if np.sum(prob[:i+1]) > y_value: 
+            y = i
+            break
+
 
     xs.append(x)
     hs.append(h)
+
 
     df = -prob + one_hot(y, num_actions)
     dfs.append(df)
@@ -106,7 +110,8 @@ while True:
         discounted_r /= np.std(discounted_r)
         #discounted_r = discounted_r / 100.0 - 1.0
 
-        epdf = epdf * discounted_r
+
+        epdf = epdf * np.tile(discounted_r, (num_actions, 1)).T
         grad = policy_backward(eph, epdf, epx)
         for k in model: grad_buffer[k] += grad[k]
 
